@@ -317,129 +317,132 @@ fun! <SID>xkb_mappings_load()
 endfun
 
 fun! <SID>imappings_load()
-    if empty(g:XkbSwitchIMappings)
-        return
-    endif
-    if index(g:XkbSwitchIMappingsSkipFt, &ft) != -1
-        return
-    endif
-    let mappingsdump = ''
-    if exists('*execute')
-        let mappingsdump = execute('imap', 'silent!')
-    else
-        redir => mappingsdump
-        silent imap
-        redir END
-    endif
-    let mappings = split(mappingsdump, '\n')
-    let mappingskeys = {}
-    for mapping in mappings
-        let data = split(mapping)
-        if len(data) < 3 || data[0] != 'i' && data[0] != '!'
-            continue
+    try
+        if empty(g:XkbSwitchIMappings)
+            return
         endif
-        let mappingskeys[data[1]] = 1
-    endfor
-    let skip_rim_list = []
-    for tr in g:XkbSwitchIMappings
-        let from = g:XkbSwitchIMappingsTr[tr]['<']
-        let to   = g:XkbSwitchIMappingsTr[tr]['>']
+        if index(g:XkbSwitchIMappingsSkipFt, &ft) != -1
+            return
+        endif
+        let mappingsdump = ''
+        if exists('*execute')
+            let mappingsdump = execute('imap', 'silent!')
+        else
+            redir => mappingsdump
+            silent imap
+            redir END
+        endif
+        let mappings = split(mappingsdump, '\n')
+        let mappingskeys = {}
         for mapping in mappings
-            " FIXME: checking for basic mappings validity could be moved
-            " outside the 'for tr' loop to avoid duplicate tests
             let data = split(mapping)
             if len(data) < 3 || data[0] != 'i' && data[0] != '!'
                 continue
             endif
-            let mapvalue = maparg(data[1], 'i')
-            if empty(mapvalue)
-                continue
-            endif
-            let value = substitute(mapping,
-                        \ '\s*\S\+\s\+\S\+\s\+\(.*\)', '\1', '')
-            " do not duplicate <script> mappings (when value contains '&')
-            if match(value, '^[[:blank:]*@]*&') != -1
-                continue
-            endif
-            " do not duplicate <Plug> and <SNR> mappings
-            " (when key starts with '<Plug>' or '<SNR>')
-            if match(data[1], '^\c<\%(Plug\|SNR\)>') != -1
-                continue
-            endif
-            " replace characters starting control sequences with spaces
-            let clean = ''
-            if g:XkbSwitchIMappingsTrCtrl
-                let clean = substitute(data[1],
-                \ '\(<[^>]\{-}\)\(-\=\)\([^->]\+\)>',
-                \ '\=repeat(" ", strlen(submatch(1)) + strlen(submatch(2))) .
-                \ (strlen(submatch(3)) == 1 ? submatch(3) :
-                \ repeat(" ", strlen(submatch(3)))) . " "', 'g')
-            else
-                let clean = substitute(data[1],
-                \ '<[^>]\+>', '\=repeat(" ", strlen(submatch(0)))', 'g')
-            endif
-            " apply translations
-            let newkey = tr(clean, from, to)
-            " restore control characters from original mapping
-            for i in range(strlen(substitute(clean, ".", "x", "g")))
-                " BEWARE: in principle strlen(clean(...)) and strlen(data[1])
-                " may differ in case if wide characters have been replaced by
-                " spaces, however it should not happen as soon as wide
-                " characters cannot start control character sequences
-                if clean[i] == " "
-                    exe
-                    \ "let newkey = substitute(newkey, '\\(^[^ ]*\\) ', '\\1".
-                    \ data[1][i]."', '')"
-                endif
-            endfor
-            if g:XkbSwitchLoadRIMappings
-                let rim_key = matchstr(data[1], '^\c<C-R>\zs.$')
-                if !empty(rim_key)
-                    if index(s:XkbSwitchIRegList, char2nr(rim_key)) == -1
-                        let rim_key_tr = tr(rim_key, to, from)
-                        if rim_key_tr != rim_key &&
-                                    \ index(s:XkbSwitchIRegList,
-                                    \ char2nr(rim_key_tr)) != -1
-                            call add(skip_rim_list, rim_key_tr)
-                        endif
-                    else
-                        call add(skip_rim_list, rim_key)
-                    endif
-                endif
-            endif
-            " do not reload existing mapping unnecessarily
-            " FIXME: list of mappings to skip depends on value of &filetype,
-            " therefore it must be reloaded on FileType events!
-            if newkey == data[1] || exists('mappingskeys[newkey]') ||
-                    \ (exists('g:XkbSwitchSkipIMappings[&ft]') &&
-                    \ index(g:XkbSwitchSkipIMappings[&ft], data[1]) != -1) ||
-                    \ (exists('g:XkbSwitchSkipIMappings["*"]') &&
-                    \ index(g:XkbSwitchSkipIMappings["*"], data[1]) != -1)
-                continue
-            endif
-            let mapcmd = match(value, '^[[:blank:]&@]*\*') == -1 ? 'imap' :
-                        \ 'inoremap'
-            " probably the mapping was defined using <expr>
-            let expr = match(value,
-                    \ '^[[:blank:]*&@]*[a-zA-Z][a-zA-Z0-9_#]*(.*)$') != -1 ?
-                    \ '<expr>' : ''
-            " new maps are always silent and buffer-local
-            exe mapcmd.' <silent> <buffer> '.expr.' '.
-                        \ substitute(newkey.' '.mapvalue, '|', '|', 'g')
+            let mappingskeys[data[1]] = 1
         endfor
-        if g:XkbSwitchLoadRIMappings
-            for rim_key_nr in s:XkbSwitchIRegList
-                let rim_key = nr2char(rim_key_nr)
-                let rim_key_tr = tr(rim_key, from, to)
-                if index(s:XkbSwitchIRegList, char2nr(rim_key_tr)) != -1 ||
-                            \ index(skip_rim_list, rim_key) != -1
+        let skip_rim_list = []
+        for tr in g:XkbSwitchIMappings
+            let from = g:XkbSwitchIMappingsTr[tr]['<']
+            let to   = g:XkbSwitchIMappingsTr[tr]['>']
+            for mapping in mappings
+                " FIXME: checking for basic mappings validity could be moved
+                " outside the 'for tr' loop to avoid duplicate tests
+                let data = split(mapping)
+                if len(data) < 3 || data[0] != 'i' && data[0] != '!'
                     continue
                 endif
-                exe 'inoremap <silent> <buffer> <C-R>'.rim_key_tr.' <C-R>'.
-                            \ rim_key
+                let mapvalue = maparg(data[1], 'i')
+                if empty(mapvalue)
+                    continue
+                endif
+                let value = substitute(mapping,
+                            \ '\s*\S\+\s\+\S\+\s\+\(.*\)', '\1', '')
+                " do not duplicate <script> mappings (when value contains '&')
+                if match(value, '^[[:blank:]*@]*&') != -1
+                    continue
+                endif
+                " do not duplicate <Plug> and <SNR> mappings
+                " (when key starts with '<Plug>' or '<SNR>')
+                if match(data[1], '^\c<\%(Plug\|SNR\)>') != -1
+                    continue
+                endif
+                " replace characters starting control sequences with spaces
+                let clean = ''
+                if g:XkbSwitchIMappingsTrCtrl
+                    let clean = substitute(data[1],
+                    \ '\(<[^>]\{-}\)\(-\=\)\([^->]\+\)>',
+                    \ '\=repeat(" ", strlen(submatch(1)) + strlen(submatch(2))) .
+                    \ (strlen(submatch(3)) == 1 ? submatch(3) :
+                    \ repeat(" ", strlen(submatch(3)))) . " "', 'g')
+                else
+                    let clean = substitute(data[1],
+                    \ '<[^>]\+>', '\=repeat(" ", strlen(submatch(0)))', 'g')
+                endif
+                " apply translations
+                let newkey = tr(clean, from, to)
+                " restore control characters from original mapping
+                for i in range(strlen(substitute(clean, ".", "x", "g")))
+                    " BEWARE: in principle strlen(clean(...)) and strlen(data[1])
+                    " may differ in case if wide characters have been replaced by
+                    " spaces, however it should not happen as soon as wide
+                    " characters cannot start control character sequences
+                    if clean[i] == " "
+                        exe
+                        \ "let newkey = substitute(newkey, '\\(^[^ ]*\\) ', '\\1".
+                        \ data[1][i]."', '')"
+                    endif
+                endfor
+                if g:XkbSwitchLoadRIMappings
+                    let rim_key = matchstr(data[1], '^\c<C-R>\zs.$')
+                    if !empty(rim_key)
+                        if index(s:XkbSwitchIRegList, char2nr(rim_key)) == -1
+                            let rim_key_tr = tr(rim_key, to, from)
+                            if rim_key_tr != rim_key &&
+                                        \ index(s:XkbSwitchIRegList,
+                                        \ char2nr(rim_key_tr)) != -1
+                                call add(skip_rim_list, rim_key_tr)
+                            endif
+                        else
+                            call add(skip_rim_list, rim_key)
+                        endif
+                    endif
+                endif
+                " do not reload existing mapping unnecessarily
+                " FIXME: list of mappings to skip depends on value of &filetype,
+                " therefore it must be reloaded on FileType events!
+                if newkey == data[1] || exists('mappingskeys[newkey]') ||
+                        \ (exists('g:XkbSwitchSkipIMappings[&ft]') &&
+                        \ index(g:XkbSwitchSkipIMappings[&ft], data[1]) != -1) ||
+                        \ (exists('g:XkbSwitchSkipIMappings["*"]') &&
+                        \ index(g:XkbSwitchSkipIMappings["*"], data[1]) != -1)
+                    continue
+                endif
+                let mapcmd = match(value, '^[[:blank:]&@]*\*') == -1 ? 'imap' :
+                            \ 'inoremap'
+                " probably the mapping was defined using <expr>
+                let expr = match(value,
+                        \ '^[[:blank:]*&@]*[a-zA-Z][a-zA-Z0-9_#]*(.*)$') != -1 ?
+                        \ '<expr>' : ''
+                " new maps are always silent and buffer-local
+                exe mapcmd.' <silent> <buffer> '.expr.' '.
+                            \ substitute(newkey.' '.mapvalue, '|', '|', 'g')
             endfor
-        endif
-    endfor
+            if g:XkbSwitchLoadRIMappings
+                for rim_key_nr in s:XkbSwitchIRegList
+                    let rim_key = nr2char(rim_key_nr)
+                    let rim_key_tr = tr(rim_key, from, to)
+                    if index(s:XkbSwitchIRegList, char2nr(rim_key_tr)) != -1 ||
+                                \ index(skip_rim_list, rim_key) != -1
+                        continue
+                    endif
+                    exe 'inoremap <silent> <buffer> <C-R>'.rim_key_tr.' <C-R>'.
+                                \ rim_key
+                endfor
+            endif
+        endfor
+    catch /./
+    endtry
 endfun
 
 fun! <SID>check_syntax_rules(force)
